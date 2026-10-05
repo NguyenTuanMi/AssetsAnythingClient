@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Forge — Image to 3D</title>
+<script type="module" src="https://cdnjs.cloudflare.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1b1e24;
+    --panel-2: #22262e;
+    --border: #2c313b;
+    --text: #e7e9ec;
+    --text-dim: #8b929e;
+    --accent: #5ee6c2;
+    --accent-dim: #2f4d46;
+    --danger: #e6725e;
+    --mono: "IBM Plex Mono", "SF Mono", Consolas, monospace;
+    --sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+  }
+
+  body {
+    display: grid;
+    grid-template-columns: 340px 1fr 300px;
+    grid-template-rows: 56px 1fr;
+    grid-template-areas:
+      "header header header"
+      "sidebar viewer info";
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  header {
+    grid-area: header;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .logo span { color: var(--accent); }
+
+  .status-pill {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .status-pill.connected { color: var(--accent); border-color: var(--accent-dim); }
+  .status-pill.down { color: var(--danger); border-color: #4a2c27; }
+
+  aside {
+    grid-area: sidebar;
+    border-right: 1px solid var(--border);
+    background: var(--panel);
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .mode-toggle {
+    display: flex;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .mode-toggle button {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .mode-toggle button.active {
+    background: var(--accent);
+    color: #0c1512;
+  }
+
+  textarea.prompt-input {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px;
+    border-radius: 6px;
+    font-family: var(--sans);
+    font-size: 13px;
+    resize: vertical;
+    min-height: 70px;
+  }
+  textarea.prompt-input:focus { outline: none; border-color: var(--accent); }
+
+  .secondary-btn {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .secondary-btn:hover { border-color: var(--accent); }
+  .secondary-btn:disabled { color: var(--text-dim); cursor: not-allowed; }
+
+  .clarify-box {
+    border: 1px solid var(--accent-dim);
+    background: #182420;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .clarify-question {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .clarify-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .clarify-chip {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 11.5px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .clarify-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  .resolved-box {
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .resolved-box .label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+  }
+  .resolved-box .value {
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .field-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 10px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+  }
+  input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+  .dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 22px 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: var(--panel-2);
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--accent); background: #1c2a26; }
+  .dropzone p { margin: 0; font-size: 13px; color: var(--text-dim); }
+  .dropzone strong { color: var(--text); }
+
+  #file-input { display: none; }
+
+  .thumbs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .thumb {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb button {
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  select {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 10px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+  }
+
+  .run-btn {
+    margin-top: auto;
+    width: 100%;
+    padding: 13px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: #0c1512;
+    font-weight: 600;
+    font-size: 13.5px;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .run-btn:hover { opacity: 0.9; }
+  .run-btn:disabled {
+    background: var(--panel-2);
+    color: var(--text-dim);
+    cursor: not-allowed;
+  }
+
+  .log {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+    line-height: 1.5;
+    min-height: 18px;
+  }
+  .log.error { color: var(--danger); }
+  .log.ok { color: var(--accent); }
+
+  main#viewer-area {
+    grid-area: viewer;
+    position: relative;
+    background:
+      radial-gradient(circle at 50% 40%, #1d2027 0%, var(--bg) 70%);
+  }
+
+  model-viewer {
+    width: 100%;
+    height: 100%;
+    --poster-color: transparent;
+  }
+
+  .empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-dim);
+    text-align: center;
+    pointer-events: none;
+  }
+  .empty-state .glyph {
+    font-family: var(--mono);
+    font-size: 34px;
+    color: var(--border);
+  }
+  .empty-state p { margin: 0; font-size: 13px; max-width: 260px; }
+
+  .viewer-toolbar {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    background: rgba(27, 30, 36, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px;
+    backdrop-filter: blur(6px);
+  }
+  .viewer-toolbar button {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 7px 12px;
+    border-radius: 7px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .viewer-toolbar button:hover { background: var(--panel-2); color: var(--text); }
+
+  .download-link {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--accent);
+    text-decoration: none;
+    border: 1px solid var(--accent-dim);
+    padding: 7px 12px;
+    border-radius: 7px;
+    display: none;
+  }
+  .download-link:hover { background: var(--accent-dim); }
+
+  .console-toggle-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .console-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .console-toggle-btn.live { color: var(--accent); border-color: var(--accent-dim); }
+  .console-toggle-btn .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    margin-right: 6px;
+  }
+  .console-toggle-btn.live .dot { background: var(--accent); }
+
+  #console-drawer {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: 260px;
+    background: #0b0d10;
+    border-top: 1px solid var(--border);
+    display: none;
+    flex-direction: column;
+    z-index: 60;
+    box-shadow: 0 -8px 24px rgba(0,0,0,0.35);
+  }
+  #console-drawer.open { display: flex; }
+
+  .console-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+  .console-header .title {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+  }
+  .console-header label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .console-header .spacer { flex: 1; }
+  .console-header button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .console-header button:hover { border-color: var(--accent); color: var(--accent); }
+
+  #console-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.6;
+  }
+  .console-line { white-space: pre-wrap; word-break: break-word; }
+  .console-line .ts { color: #555b66; margin-right: 8px; }
+  .console-line .lvl { margin-right: 8px; font-weight: 600; }
+  .console-line.level-info .lvl { color: var(--text-dim); }
+  .console-line.level-warning .lvl, .console-line.level-warn .lvl { color: #e6c25e; }
+  .console-line.level-error .lvl { color: var(--danger); }
+  .console-line .msg { color: var(--text); }
+  .console-empty { color: var(--text-dim); font-family: var(--mono); font-size: 11.5px; }
+
+  #info-panel {
+    grid-area: info;
+    border-left: 1px solid var(--border);
+    background: var(--panel);
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  #info-panel h2 {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin: 0;
+  }
+
+  .dim-empty {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  .dim-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .dim-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .dim-row .axis {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+
+  .axis-chip {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: #0c1512;
+  }
+  .axis-chip.x { background: #e6725e; }
+  .axis-chip.y { background: #5ee6c2; }
+  .axis-chip.z { background: #6ea6e6; }
+
+  .dim-row .value {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .dim-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 2px 0;
+  }
+
+  .dim-summary {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .dim-summary b { color: var(--text); font-weight: 500; }
+
+  .units-note {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+
+  .resize-inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 560px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+  }
+  .modal-header button {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .modal-header button:hover { color: var(--text); }
+  .modal-summary {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin: 0;
+  }
+  #scrape-modal-thumbs.thumbs {
+    grid-template-columns: repeat(4, 1fr);
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  #scrape-modal-thumbs .thumb {
+    cursor: pointer;
+    opacity: 0.4;
+    border: 2px solid transparent;
+    transition: opacity 0.15s, border-color 0.15s;
+  }
+  #scrape-modal-thumbs .thumb.selected {
+    opacity: 1;
+    border-color: var(--accent);
+  }
+  #scrape-modal-thumbs .thumb.single {
+    cursor: default;
+  }
+  .thumb-check {
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0c1512;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  #scrape-modal-thumbs .thumb.selected .thumb-check { opacity: 1; }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .modal-actions .run-btn, .modal-actions .secondary-btn { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">forge <span>/ image → 3d</span></div>
+  <div id="status" class="status-pill">checking server…</div>
+  <button id="console-toggle-btn" class="console-toggle-btn"><span class="dot"></span>Console</button>
+</header>
+
+<aside>
+  <div>
+    <label class="field-label">Server URL</label>
+    <input id="server-url" type="text" value="http://localhost:8000" />
+  </div>
+
+  <div class="mode-toggle">
+    <button id="mode-upload-btn" class="active">Upload images</button>
+    <button id="mode-prompt-btn">Describe with prompt</button>
+  </div>
+
+  <!-- ===== Upload-mode UI (existing flow) ===== -->
+  <div id="upload-mode">
+    <label class="field-label">Images</label>
+    <div id="dropzone" class="dropzone">
+      <p><strong>Click to upload</strong> or drag images here</p>
+      <p style="margin-top:4px;">Multiple angles of the same object work best</p>
+    </div>
+    <input id="file-input" type="file" accept="image/*" multiple />
+
+    <div id="thumbs" class="thumbs" style="margin-top:12px;"></div>
+
+    <div style="margin-top:14px;">
+      <label class="field-label">Fusion mode</label>
+      <select id="algo-select">
+        <option value="stochastic">Stochastic (sharper detail)</option>
+        <option value="multidiffusion">Multidiffusion (more consistent)</option>
+      </select>
+    </div>
+
+    <div class="resolved-box" style="margin-top:14px; display:flex;">
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+        <input type="checkbox" id="upload-auto-dim-check" checked />
+        Auto-detect real-world dimensions
+      </label>
+      <div id="upload-hint-wrap">
+        <label class="field-label" style="margin-top:8px;">What is it? (optional, improves accuracy)</label>
+        <input id="upload-object-hint" type="text" placeholder="e.g. IKEA Poäng armchair" />
+      </div>
+      <button id="upload-detect-dim-btn" class="secondary-btn" style="margin-top:4px;">Detect dimensions from image</button>
+      <div id="upload-dim-status" class="log" style="margin:0;"></div>
+
+      <div id="upload-manual-dim-wrap" style="display:none; flex-direction:column; gap:8px;">
+        <label class="field-label" style="margin:0;">Enter dimensions manually (cm)</label>
+        <input id="upload-dim-length" type="text" placeholder="Length (cm)" />
+        <input id="upload-dim-width" type="text" placeholder="Width (cm)" />
+        <input id="upload-dim-height" type="text" placeholder="Height (cm)" />
+      </div>
+    </div>
+
+    <button id="run-btn" class="run-btn" disabled style="margin-top:14px;">Upload images to begin</button>
+  </div>
+
+  <!-- ===== Prompt-mode UI (new flow) ===== -->
+  <div id="prompt-mode" style="display:none; flex-direction: column; gap: 16px;">
+    <div>
+      <label class="field-label">Describe the object</label>
+      <textarea id="prompt-input" class="prompt-input" placeholder="e.g. Nike Air Jordan 1 Retro High OG, or 'a mid-century wooden dining chair'"></textarea>
+    </div>
+
+    <button id="interpret-btn" class="secondary-btn">Interpret prompt</button>
+
+    <div id="clarify-box" class="clarify-box" style="display:none">
+      <div class="clarify-question" id="clarify-question"></div>
+      <div class="clarify-chips" id="clarify-chips"></div>
+      <input id="clarify-answer" type="text" placeholder="Type your answer…" />
+      <button id="clarify-submit-btn" class="secondary-btn">Submit answer</button>
+    </div>
+
+    <div id="resolved-box" class="resolved-box" style="display:none">
+      <div>
+        <div class="label">Resolved object</div>
+        <div class="value" id="resolved-object">—</div>
+      </div>
+      <div>
+        <div class="label">Search query</div>
+        <div class="value" id="resolved-query">—</div>
+      </div>
+    </div>
+
+    <div style="display:none" id="prompt-algo-wrap">
+      <label class="field-label">Fusion mode</label>
+      <select id="prompt-algo-select">
+        <option value="stochastic">Stochastic (sharper detail)</option>
+        <option value="multidiffusion">Multidiffusion (more consistent)</option>
+      </select>
+    </div>
+
+    <div class="resolved-box" id="prompt-dim-wrap" style="display:none; flex-direction:column;">
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+        <input type="checkbox" id="prompt-auto-dim-check" checked />
+        Auto-detect real-world dimensions
+      </label>
+      <div style="font-size:11.5px; color:var(--text-dim);">
+        Skipped automatically if no consistent photos are found and an AI-generated reference image is used instead.
+      </div>
+      <div id="prompt-manual-dim-wrap" style="display:none; flex-direction:column; gap:8px;">
+        <label class="field-label" style="margin:0;">Enter dimensions manually (cm)</label>
+        <input id="prompt-dim-length" type="text" placeholder="Length (cm)" />
+        <input id="prompt-dim-width" type="text" placeholder="Width (cm)" />
+        <input id="prompt-dim-height" type="text" placeholder="Height (cm)" />
+      </div>
+    </div>
+
+    <button id="prompt-generate-btn" class="run-btn" style="display:none">Generate 3D Model</button>
+  </div>
+
+  <div id="log" class="log"></div>
+</aside>
+
+<main id="viewer-area">
+  <div id="empty-state" class="empty-state">
+    <div class="glyph">◇</div>
+    <p>Your generated model will appear here. Upload a few images of your object and hit run.</p>
+  </div>
+
+  <model-viewer
+    id="viewer"
+    style="display:none"
+    camera-controls
+    touch-action="pan-y"
+    auto-rotate
+    auto-rotate-delay="0"
+    rotation-per-second="18deg"
+    interaction-prompt="none"
+    shadow-intensity="1"
+    exposure="1.1"
+    environment-image="neutral"
+  ></model-viewer>
+
+  <a id="download-link" class="download-link" download="model.glb">↓ download .glb</a>
+
+  <div id="viewer-toolbar" class="viewer-toolbar" style="display:none">
+    <button id="toggle-rotate">⏸ pause spin</button>
+    <button id="reset-cam">⟲ reset view</button>
+  </div>
+</main>
+
+<div id="info-panel">
+  <h2>Bounding box</h2>
+  <div id="dim-empty" class="dim-empty">Generate a model to see its bounding-box dimensions here.</div>
+
+  <div id="dim-content" style="display:none">
+    <div class="dim-grid">
+      <div class="dim-row">
+        <span class="axis"><span class="axis-chip x">X</span>Width</span>
+        <span class="value" id="dim-x">—</span>
+      </div>
+      <div class="dim-row">
+        <span class="axis"><span class="axis-chip y">Y</span>Height</span>
+        <span class="value" id="dim-y">—</span>
+      </div>
+      <div class="dim-row">
+        <span class="axis"><span class="axis-chip z">Z</span>Depth</span>
+        <span class="value" id="dim-z">—</span>
+      </div>
+    </div>
+
+    <div class="dim-divider"></div>
+
+    <div class="dim-summary">
+      diagonal &nbsp;<b id="dim-diag">—</b><br/>
+      min corner &nbsp;<b id="dim-min">—</b><br/>
+      max corner &nbsp;<b id="dim-max">—</b>
+    </div>
+
+    <div class="units-note" id="dim-units">
+      Values are in normalized model-space units, not real-world measurements — TRELLIS doesn't infer true physical scale from images alone.
+    </div>
+  </div>
+
+  <div id="resize-box" style="display:none; flex-direction:column; gap:10px;">
+    <h2>Resize object</h2>
+    <div style="font-size:11.5px; color:var(--text-dim);">
+      Works any time after generation — applies on top of whatever scale (or none) is currently set.
+    </div>
+    <div class="resize-inputs">
+      <input id="resize-length" type="text" placeholder="Length (cm)" />
+      <input id="resize-width" type="text" placeholder="Width (cm)" />
+      <input id="resize-height" type="text" placeholder="Height (cm)" />
+    </div>
+    <button id="resize-apply-btn" class="secondary-btn">Apply size</button>
+    <div id="resize-status" class="log" style="margin:0;"></div>
+  </div>
+</div>
+
+<div id="scrape-modal-backdrop" class="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>Images scraped successfully</span>
+      <button id="scrape-modal-close-btn">✕</button>
+    </div>
+    <p id="scrape-modal-summary" class="modal-summary"></p>
+    <div id="scrape-modal-thumbs" class="thumbs"></div>
+    <div class="modal-actions">
+      <button id="scrape-modal-cancel-btn" class="secondary-btn">Cancel</button>
+      <button id="scrape-modal-continue-btn" class="run-btn">Continue to 3D generation</button>
+    </div>
+  </div>
+</div>
+
+<div id="console-drawer">
+  <div class="console-header">
+    <span class="title">Server console</span>
+    <label><input type="checkbox" id="console-autoscroll" checked /> Auto-scroll</label>
+    <label><input type="checkbox" id="console-live" checked /> Live</label>
+    <div class="spacer"></div>
+    <button id="console-clear-btn">Clear</button>
+    <button id="console-close-btn">✕</button>
+  </div>
+  <div id="console-body">
+    <div class="console-empty">Waiting for logs…</div>
+  </div>
+</div>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+const thumbsEl = document.getElementById('thumbs');
+const runBtn = document.getElementById('run-btn');
+const logEl = document.getElementById('log');
+const serverUrlInput = document.getElementById('server-url');
+const statusEl = document.getElementById('status');
+const viewer = document.getElementById('viewer');
+const emptyState = document.getElementById('empty-state');
+const downloadLink = document.getElementById('download-link');
+const toolbar = document.getElementById('viewer-toolbar');
+const toggleRotateBtn = document.getElementById('toggle-rotate');
+const resetCamBtn = document.getElementById('reset-cam');
+const algoSelect = document.getElementById('algo-select');
+
+// ----- Upload-mode dimension controls -----
+const uploadAutoDimCheck = document.getElementById('upload-auto-dim-check');
+const uploadHintWrap = document.getElementById('upload-hint-wrap');
+const uploadObjectHint = document.getElementById('upload-object-hint');
+const uploadDetectDimBtn = document.getElementById('upload-detect-dim-btn');
+const uploadDimStatus = document.getElementById('upload-dim-status');
+const uploadManualDimWrap = document.getElementById('upload-manual-dim-wrap');
+const uploadDimLength = document.getElementById('upload-dim-length');
+const uploadDimWidth = document.getElementById('upload-dim-width');
+const uploadDimHeight = document.getElementById('upload-dim-height');
+
+let uploadDetectedDims = null; // {length_cm, width_cm, height_cm} once /identify_dimensions succeeds
+
+function refreshUploadDimControls() {
+  const auto = uploadAutoDimCheck.checked;
+  uploadHintWrap.style.display = auto ? 'block' : 'none';
+  uploadDetectDimBtn.style.display = auto ? 'block' : 'none';
+  // Manual entry is available either when auto-detect is off, or when it's
+  // on but detection hasn't found anything yet (fallback path).
+  uploadManualDimWrap.style.display = (!auto || (auto && uploadDetectedDims === null)) ? 'flex' : 'none';
+  if (auto) uploadManualDimWrap.querySelector('.field-label').textContent =
+    'Or enter manually if detection fails (cm)';
+  else uploadManualDimWrap.querySelector('.field-label').textContent = 'Enter dimensions manually (cm)';
+}
+uploadAutoDimCheck.addEventListener('change', () => {
+  uploadDetectedDims = null;
+  uploadDimStatus.textContent = '';
+  refreshUploadDimControls();
+});
+refreshUploadDimControls();
+
+uploadDetectDimBtn.addEventListener('click', async () => {
+  if (files.length === 0) {
+    uploadDimStatus.textContent = 'Upload at least one image first.';
+    uploadDimStatus.className = 'log error';
+    return;
+  }
+  uploadDetectDimBtn.disabled = true;
+  uploadDimStatus.textContent = 'Identifying object and looking up specs…';
+  uploadDimStatus.className = 'log';
+  try {
+    const form = new FormData();
+    form.append('image', files[0]);
+    form.append('object_name_hint', uploadObjectHint.value.trim());
+    const res = await fetch(`${serverUrl()}/identify_dimensions`, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    if (data.found) {
+      uploadDetectedDims = { length_cm: data.length_cm, width_cm: data.width_cm, height_cm: data.height_cm };
+      const parts = [];
+      if (data.length_cm) parts.push(`L ${data.length_cm}cm`);
+      if (data.width_cm) parts.push(`W ${data.width_cm}cm`);
+      if (data.height_cm) parts.push(`H ${data.height_cm}cm`);
+      uploadDimStatus.textContent = `Detected ${data.identified_name}: ${parts.join(' × ')} (${data.confidence} confidence)`;
+      uploadDimStatus.className = 'log ok';
+    } else {
+      uploadDetectedDims = null;
+      uploadDimStatus.textContent = `Couldn't find precise dimensions for ${data.identified_name}. Enter them manually below.`;
+      uploadDimStatus.className = 'log error';
+    }
+  } catch (err) {
+    uploadDetectedDims = null;
+    uploadDimStatus.textContent = `Detection failed: ${err.message}`;
+    uploadDimStatus.className = 'log error';
+  } finally {
+    uploadDetectDimBtn.disabled = false;
+    refreshUploadDimControls();
+  }
+});
+
+function getUploadTargetDimensions() {
+  if (uploadAutoDimCheck.checked && uploadDetectedDims) {
+    return { dims: uploadDetectedDims, source: 'auto_detected' };
+  }
+  const length_cm = parseFloat(uploadDimLength.value);
+  const width_cm = parseFloat(uploadDimWidth.value);
+  const height_cm = parseFloat(uploadDimHeight.value);
+  const dims = {};
+  if (!isNaN(length_cm)) dims.length_cm = length_cm;
+  if (!isNaN(width_cm)) dims.width_cm = width_cm;
+  if (!isNaN(height_cm)) dims.height_cm = height_cm;
+  if (Object.keys(dims).length === 0) return null;
+  return { dims, source: 'manual' };
+}
+
+const dimEmpty = document.getElementById('dim-empty');
+const dimContent = document.getElementById('dim-content');
+const dimX = document.getElementById('dim-x');
+const dimY = document.getElementById('dim-y');
+const dimZ = document.getElementById('dim-z');
+const dimDiag = document.getElementById('dim-diag');
+const dimMin = document.getElementById('dim-min');
+const dimMax = document.getElementById('dim-max');
+const dimUnits = document.getElementById('dim-units');
+
+// ----- Persistent resize box (works post-generation, any time) -----
+const resizeBox = document.getElementById('resize-box');
+const resizeLength = document.getElementById('resize-length');
+const resizeWidth = document.getElementById('resize-width');
+const resizeHeight = document.getElementById('resize-height');
+const resizeApplyBtn = document.getElementById('resize-apply-btn');
+const resizeStatus = document.getElementById('resize-status');
+
+let currentJobId = null; // set after any successful generation, from data.job_id
+
+function setCurrentJob(jobId) {
+  currentJobId = jobId;
+  resizeBox.style.display = jobId ? 'flex' : 'none';
+  resizeStatus.textContent = '';
+}
+
+resizeApplyBtn.addEventListener('click', async () => {
+  if (!currentJobId) return;
+
+  const length_cm = parseFloat(resizeLength.value);
+  const width_cm = parseFloat(resizeWidth.value);
+  const height_cm = parseFloat(resizeHeight.value);
+  if (isNaN(length_cm) || isNaN(width_cm) || isNaN(height_cm)) {
+    resizeStatus.textContent = 'Enter all three dimensions.';
+    resizeStatus.className = 'log error';
+    return;
+  }
+
+  resizeApplyBtn.disabled = true;
+  resizeStatus.textContent = 'Resizing…';
+  resizeStatus.className = 'log';
+
+  try {
+    const res = await fetch(`${serverUrl()}/apply_dimensions/${currentJobId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ length_cm, width_cm, height_cm }),
+    });
+    if (!res.ok) throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+
+    // Cache-bust: the .glb is overwritten in place server-side, but
+    // model-viewer/browser will otherwise keep showing the cached old
+    // geometry for the same URL.
+    const modelUrl = `${serverUrl()}${data.download_url}?t=${Date.now()}`;
+    viewer.src = modelUrl;
+    downloadLink.href = modelUrl;
+
+    renderDimensions(data.dimensions);
+    resizeStatus.textContent = `Resized to ${length_cm} × ${width_cm} × ${height_cm} cm.`;
+    resizeStatus.className = 'log ok';
+  } catch (err) {
+    resizeStatus.textContent = `Failed: ${err.message}`;
+    resizeStatus.className = 'log error';
+  } finally {
+    resizeApplyBtn.disabled = false;
+  }
+});
+
+// ----- Scrape preview modal -----
+const scrapeModalBackdrop = document.getElementById('scrape-modal-backdrop');
+const scrapeModalSummary = document.getElementById('scrape-modal-summary');
+const scrapeModalThumbs = document.getElementById('scrape-modal-thumbs');
+const scrapeModalCloseBtn = document.getElementById('scrape-modal-close-btn');
+const scrapeModalCancelBtn = document.getElementById('scrape-modal-cancel-btn');
+const scrapeModalContinueBtn = document.getElementById('scrape-modal-continue-btn');
+
+let pendingScrapeId = null;
+let pendingGenerateParams = null;
+let scrapeSelected = new Set(); // indices into the current modal's images array
+
+function renderScrapeModalSummary(total) {
+  const n = scrapeSelected.size;
+  scrapeModalSummary.textContent = total === 1
+    ? `1 image downloaded successfully. Review it, then continue.`
+    : n === total
+      ? `${total} images downloaded successfully. Click any image to exclude it, then continue.`
+      : `${n} of ${total} image(s) selected for reconstruction.`;
+  scrapeModalContinueBtn.disabled = n === 0;
+  scrapeModalContinueBtn.textContent = n === 0 ? 'Select at least one image' : 'Continue to 3D generation';
+}
+
+function showScrapeModal(data) {
+  const total = data.images.length;
+  scrapeSelected = new Set(data.images.map((_, i) => i)); // default: everything selected
+  scrapeModalThumbs.innerHTML = '';
+
+  data.images.forEach((img, i) => {
+    const div = document.createElement('div');
+    div.className = `thumb selected${total === 1 ? ' single' : ''}`;
+    div.innerHTML =
+      `<img src="${serverUrl()}${img.url}" title="${(img.title || '').replace(/"/g, '&quot;')}" />` +
+      (total === 1 ? '' : '<div class="thumb-check">✓</div>');
+
+    if (total > 1) {
+      div.addEventListener('click', () => {
+        if (scrapeSelected.has(i)) {
+          scrapeSelected.delete(i);
+          div.classList.remove('selected');
+        } else {
+          scrapeSelected.add(i);
+          div.classList.add('selected');
+        }
+        renderScrapeModalSummary(total);
+      });
+    }
+    scrapeModalThumbs.appendChild(div);
+  });
+
+  renderScrapeModalSummary(total);
+  scrapeModalBackdrop.classList.add('open');
+}
+
+function hideScrapeModal() {
+  scrapeModalBackdrop.classList.remove('open');
+}
+
+scrapeModalCloseBtn.addEventListener('click', hideScrapeModal);
+scrapeModalCancelBtn.addEventListener('click', () => {
+  hideScrapeModal();
+  setLog('Cancelled — no model generated.');
+});
+
+// ----- Mode toggle -----
+const modeUploadBtn = document.getElementById('mode-upload-btn');
+const modePromptBtn = document.getElementById('mode-prompt-btn');
+const uploadModeEl = document.getElementById('upload-mode');
+const promptModeEl = document.getElementById('prompt-mode');
+
+function setMode(mode) {
+  const isUpload = mode === 'upload';
+  modeUploadBtn.classList.toggle('active', isUpload);
+  modePromptBtn.classList.toggle('active', !isUpload);
+  uploadModeEl.style.display = isUpload ? 'block' : 'none';
+  promptModeEl.style.display = isUpload ? 'none' : 'flex';
+  setLog('');
+}
+modeUploadBtn.addEventListener('click', () => setMode('upload'));
+modePromptBtn.addEventListener('click', () => setMode('prompt'));
+
+// ----- Prompt mode -----
+const promptInput = document.getElementById('prompt-input');
+const interpretBtn = document.getElementById('interpret-btn');
+const clarifyBox = document.getElementById('clarify-box');
+const clarifyQuestion = document.getElementById('clarify-question');
+const clarifyChips = document.getElementById('clarify-chips');
+const clarifyAnswer = document.getElementById('clarify-answer');
+const clarifySubmitBtn = document.getElementById('clarify-submit-btn');
+const resolvedBox = document.getElementById('resolved-box');
+const resolvedObject = document.getElementById('resolved-object');
+const resolvedQuery = document.getElementById('resolved-query');
+const promptAlgoWrap = document.getElementById('prompt-algo-wrap');
+const promptAlgoSelect = document.getElementById('prompt-algo-select');
+const promptGenerateBtn = document.getElementById('prompt-generate-btn');
+const promptDimWrap = document.getElementById('prompt-dim-wrap');
+const promptAutoDimCheck = document.getElementById('prompt-auto-dim-check');
+const promptManualDimWrap = document.getElementById('prompt-manual-dim-wrap');
+const promptDimLength = document.getElementById('prompt-dim-length');
+const promptDimWidth = document.getElementById('prompt-dim-width');
+const promptDimHeight = document.getElementById('prompt-dim-height');
+
+function refreshPromptDimControls() {
+  promptManualDimWrap.style.display = promptAutoDimCheck.checked ? 'none' : 'flex';
+}
+promptAutoDimCheck.addEventListener('change', refreshPromptDimControls);
+refreshPromptDimControls();
+
+function getPromptTargetDimensions() {
+  const length_cm = parseFloat(promptDimLength.value);
+  const width_cm = parseFloat(promptDimWidth.value);
+  const height_cm = parseFloat(promptDimHeight.value);
+  const dims = {};
+  if (!isNaN(length_cm)) dims.length_cm = length_cm;
+  if (!isNaN(width_cm)) dims.width_cm = width_cm;
+  if (!isNaN(height_cm)) dims.height_cm = height_cm;
+  return Object.keys(dims).length ? dims : null;
+}
+
+let qaHistory = [];
+let resolvedResult = null; // holds the final {search_query, search_filters, ...} once resolved
+
+function resetPromptFlow() {
+  qaHistory = [];
+  resolvedResult = null;
+  clarifyBox.style.display = 'none';
+  resolvedBox.style.display = 'none';
+  promptAlgoWrap.style.display = 'none';
+  promptDimWrap.style.display = 'none';
+  promptGenerateBtn.style.display = 'none';
+  clarifyAnswer.value = '';
+}
+
+async function callRewritePrompt() {
+  const res = await fetch(`${serverUrl()}/rewrite_prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: promptInput.value.trim(),
+      qa_history: qaHistory,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Server returned ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+function showClarification(data) {
+  clarifyBox.style.display = 'flex';
+  clarifyQuestion.textContent = data.clarification_question || 'Could you clarify what you mean?';
+
+  clarifyChips.innerHTML = '';
+  (data.candidate_interpretations || []).forEach(opt => {
+    const chip = document.createElement('button');
+    chip.className = 'clarify-chip';
+    chip.textContent = opt;
+    chip.onclick = () => {
+      clarifyAnswer.value = opt;
+    };
+    clarifyChips.appendChild(chip);
+  });
+}
+
+function showResolved(data) {
+  resolvedResult = data;
+  clarifyBox.style.display = 'none';
+  resolvedBox.style.display = 'flex';
+  resolvedObject.textContent = data.object_name || '—';
+  resolvedQuery.textContent = data.search_query || '—';
+  promptAlgoWrap.style.display = 'block';
+  promptDimWrap.style.display = 'flex';
+  promptGenerateBtn.style.display = 'block';
+}
+
+interpretBtn.addEventListener('click', async () => {
+  if (!promptInput.value.trim()) return;
+  resetPromptFlow();
+  interpretBtn.disabled = true;
+  setLog('Interpreting prompt…');
+
+  try {
+    const data = await callRewritePrompt();
+    if (data.classification === 'needs_clarification') {
+      showClarification(data);
+      setLog('Please answer the question below to continue.');
+    } else {
+      showResolved(data);
+      setLog(`Interpreted as a ${data.classification.replace('_', ' ')}.`, 'ok');
+    }
+  } catch (err) {
+    setLog(`Failed: ${err.message}`, 'error');
+  } finally {
+    interpretBtn.disabled = false;
+  }
+});
+
+clarifySubmitBtn.addEventListener('click', async () => {
+  if (!clarifyAnswer.value.trim()) return;
+  clarifySubmitBtn.disabled = true;
+  setLog('Refining…');
+
+  qaHistory.push({
+    question: clarifyQuestion.textContent,
+    answer: clarifyAnswer.value.trim(),
+  });
+  clarifyAnswer.value = '';
+
+  try {
+    const data = await callRewritePrompt();
+    if (data.classification === 'needs_clarification') {
+      showClarification(data);
+      setLog('Please answer the question below to continue.');
+    } else {
+      showResolved(data);
+      setLog(`Interpreted as a ${data.classification.replace('_', ' ')}.`, 'ok');
+    }
+  } catch (err) {
+    setLog(`Failed: ${err.message}`, 'error');
+  } finally {
+    clarifySubmitBtn.disabled = false;
+  }
+});
+
+promptGenerateBtn.addEventListener('click', async () => {
+  if (!resolvedResult || !resolvedResult.search_query) return;
+
+  promptGenerateBtn.disabled = true;
+  promptGenerateBtn.textContent = 'Searching for images…';
+  setLog('Scraping reference images…');
+
+  try {
+    const res = await fetch(`${serverUrl()}/scrape_images`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_query: resolvedResult.search_query,
+        prefer_shopping_results: !!(resolvedResult.search_filters && resolvedResult.search_filters.prefer_shopping_results),
+      }),
+    });
+    if (!res.ok) throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    if (!data.images || data.images.length === 0) throw new Error('No usable images found.');
+
+    pendingScrapeId = data.scrape_id;
+    pendingGenerateParams = {
+      object_name: resolvedResult.object_name || '',
+      multiimage_algo: promptAlgoSelect.value,
+      auto_dimensions: promptAutoDimCheck.checked,
+      target_dimensions_cm: promptAutoDimCheck.checked ? null : getPromptTargetDimensions(),
+    };
+    showScrapeModal(data);
+    setLog(`Found ${data.images.length} image(s) — review and continue when ready.`, 'ok');
+  } catch (err) {
+    setLog(`Failed: ${err.message}`, 'error');
+  } finally {
+    promptGenerateBtn.disabled = false;
+    promptGenerateBtn.textContent = 'Generate 3D Model';
+  }
+});
+
+scrapeModalContinueBtn.addEventListener('click', async () => {
+  if (!pendingScrapeId || !pendingGenerateParams || scrapeSelected.size === 0) return;
+  hideScrapeModal();
+
+  setLog('Running TRELLIS on the remote server… this can take a minute');
+  renderDimensions(null);
+  setCurrentJob(null);
+
+  try {
+    const res = await fetch(`${serverUrl()}/generate_from_scrape/${pendingScrapeId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...pendingGenerateParams,
+        selected_indices: Array.from(scrapeSelected),
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Server returned ${res.status}: ${text}`);
+    }
+
+    const data = await res.json();
+    const modelUrl = `${serverUrl()}${data.download_url}`;
+
+    viewer.src = modelUrl;
+    viewer.style.display = 'block';
+    emptyState.style.display = 'none';
+    toolbar.style.display = 'flex';
+    downloadLink.href = modelUrl;
+    downloadLink.style.display = 'inline-block';
+
+    renderDimensions(data.dimensions);
+    setCurrentJob(data.job_id);
+
+    const sourceNote = data.used_ai_generated_reference
+      ? 'no consistent photos found — used an AI-generated reference image (dimension lookup skipped)'
+      : data.dimensions_source === 'none'
+        ? 'no real-world scale applied — normalized units only'
+        : `scaled to real-world size, source: ${data.dimensions_source}`;
+    setLog(`Model generated from ${data.num_images_used} image(s) (${sourceNote}).`, 'ok');
+  } catch (err) {
+    setLog(`Failed: ${err.message}`, 'error');
+  } finally {
+    pendingScrapeId = null;
+    pendingGenerateParams = null;
+    scrapeSelected = new Set();
+  }
+});
+
+function renderDimensions(dims) {
+  if (!dims) {
+    dimEmpty.style.display = 'block';
+    dimContent.style.display = 'none';
+    return;
+  }
+  dimEmpty.style.display = 'none';
+  dimContent.style.display = 'block';
+
+  dimX.textContent = dims.width_x.toFixed(3);
+  dimY.textContent = dims.height_y.toFixed(3);
+  dimZ.textContent = dims.depth_z.toFixed(3);
+  dimDiag.textContent = dims.diagonal.toFixed(3);
+  dimMin.textContent = `[${dims.min_corner.map(v => v.toFixed(2)).join(', ')}]`;
+  dimMax.textContent = `[${dims.max_corner.map(v => v.toFixed(2)).join(', ')}]`;
+  if (dims.units) dimUnits.textContent = dims.units.replace(/^./, c => c.toUpperCase()) + '.';
+}
+
+let files = [];
+
+function serverUrl() {
+  return serverUrlInput.value.trim().replace(/\/$/, '');
+}
+
+function setLog(msg, cls) {
+  logEl.textContent = msg;
+  logEl.className = 'log' + (cls ? ' ' + cls : '');
+}
+
+function updateRunButton() {
+  runBtn.disabled = files.length === 0;
+  runBtn.textContent = files.length === 0
+    ? 'Upload images to begin'
+    : `Run — generate 3D model (${files.length} image${files.length > 1 ? 's' : ''})`;
+}
+
+function renderThumbs() {
+  thumbsEl.innerHTML = '';
+  files.forEach((file, i) => {
+    const url = URL.createObjectURL(file);
+    const div = document.createElement('div');
+    div.className = 'thumb';
+    div.innerHTML = `<img src="${url}" /><button title="remove">×</button>`;
+    div.querySelector('button').onclick = () => {
+      files.splice(i, 1);
+      renderThumbs();
+      updateRunButton();
+    };
+    thumbsEl.appendChild(div);
+  });
+}
+
+dropzone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+  files.push(...Array.from(e.target.files));
+  renderThumbs();
+  updateRunButton();
+  fileInput.value = '';
+});
+
+['dragover', 'dragleave', 'drop'].forEach(evt => {
+  dropzone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropzone.classList.toggle('drag', evt === 'dragover');
+  });
+});
+dropzone.addEventListener('drop', (e) => {
+  const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+  files.push(...dropped);
+  renderThumbs();
+  updateRunButton();
+});
+
+async function checkHealth() {
+  try {
+    const res = await fetch(`${serverUrl()}/health`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error();
+    statusEl.textContent = 'server connected';
+    statusEl.className = 'status-pill connected';
+  } catch {
+    statusEl.textContent = 'server unreachable';
+    statusEl.className = 'status-pill down';
+  }
+}
+checkHealth();
+serverUrlInput.addEventListener('change', checkHealth);
+
+runBtn.addEventListener('click', async () => {
+  if (files.length === 0) return;
+
+  runBtn.disabled = true;
+  runBtn.textContent = 'Generating… this can take a minute';
+  setLog('Uploading images and running TRELLIS on the remote server…');
+  renderDimensions(null);
+  setCurrentJob(null);
+
+  const form = new FormData();
+  files.forEach(f => form.append('images', f));
+  form.append('multiimage_algo', algoSelect.value);
+  const target = getUploadTargetDimensions();
+  if (target) {
+    form.append('target_dimensions_cm', JSON.stringify(target.dims));
+    form.append('dimensions_source', target.source);
+  }
+
+  try {
+    const res = await fetch(`${serverUrl()}/generate`, {
+      method: 'POST',
+      body: form,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Server returned ${res.status}: ${text}`);
+    }
+
+    const data = await res.json();
+    const modelUrl = `${serverUrl()}${data.download_url}`;
+
+    viewer.src = modelUrl;
+    viewer.style.display = 'block';
+    emptyState.style.display = 'none';
+    toolbar.style.display = 'flex';
+    downloadLink.href = modelUrl;
+    downloadLink.style.display = 'inline-block';
+
+    renderDimensions(data.dimensions);
+    setCurrentJob(data.job_id);
+
+    const scaledNote = data.dimensions_source === 'none'
+      ? ' (no real-world scale applied — normalized units only)'
+      : ` (scaled to real-world size, source: ${data.dimensions_source})`;
+    setLog(`Model generated successfully${scaledNote}.`, 'ok');
+  } catch (err) {
+    setLog(`Failed: ${err.message}`, 'error');
+  } finally {
+    updateRunButton();
+  }
+});
+
+toggleRotateBtn.addEventListener('click', () => {
+  const spinning = viewer.hasAttribute('auto-rotate');
+  if (spinning) {
+    viewer.removeAttribute('auto-rotate');
+    toggleRotateBtn.textContent = '▶ resume spin';
+  } else {
+    viewer.setAttribute('auto-rotate', '');
+    toggleRotateBtn.textContent = '⏸ pause spin';
+  }
+});
+
+resetCamBtn.addEventListener('click', () => {
+  viewer.cameraOrbit = '0deg 75deg 105%';
+  viewer.cameraTarget = 'auto';
+});
+
+// ----- Server console (polls GET /logs?after=<cursor> on the server) -----
+const consoleToggleBtn = document.getElementById('console-toggle-btn');
+const consoleDrawer = document.getElementById('console-drawer');
+const consoleBody = document.getElementById('console-body');
+const consoleAutoscroll = document.getElementById('console-autoscroll');
+const consoleLive = document.getElementById('console-live');
+const consoleClearBtn = document.getElementById('console-clear-btn');
+const consoleCloseBtn = document.getElementById('console-close-btn');
+
+let consoleCursor = 0;
+let consolePollTimer = null;
+let consoleHasLines = false;
+
+function appendConsoleLines(lines) {
+  if (!lines || lines.length === 0) return;
+
+  if (!consoleHasLines) {
+    consoleBody.innerHTML = '';
+    consoleHasLines = true;
+  }
+
+  const wasNearBottom = consoleBody.scrollHeight - consoleBody.scrollTop - consoleBody.clientHeight < 40;
+
+  for (const line of lines) {
+    const level = (line.level || 'info').toLowerCase();
+    const div = document.createElement('div');
+    div.className = `console-line level-${level}`;
+    const ts = line.timestamp || '';
+    div.innerHTML = `<span class="ts">${ts}</span><span class="lvl">${level.toUpperCase()}</span><span class="msg"></span>`;
+    div.querySelector('.msg').textContent = line.message || '';
+    consoleBody.appendChild(div);
+  }
+
+  if (consoleAutoscroll.checked && wasNearBottom) {
+    consoleBody.scrollTop = consoleBody.scrollHeight;
+  }
+}
+
+async function pollConsole() {
+  if (!consoleLive.checked) return;
+  try {
+    const res = await fetch(`${serverUrl()}/logs?after=${consoleCursor}`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return;
+    const data = await res.json();
+    appendConsoleLines(data.lines);
+    if (typeof data.next_cursor === 'number') consoleCursor = data.next_cursor;
+  } catch {
+    // Silent — a single missed poll while the server is busy/unreachable
+    // isn't worth interrupting the console over; it'll catch up next tick.
+  }
+}
+
+function openConsole() {
+  consoleDrawer.classList.add('open');
+  consoleToggleBtn.classList.add('live');
+  pollConsole();
+  if (!consolePollTimer) consolePollTimer = setInterval(pollConsole, 1500);
+}
+
+function closeConsole() {
+  consoleDrawer.classList.remove('open');
+  consoleToggleBtn.classList.remove('live');
+  if (consolePollTimer) {
+    clearInterval(consolePollTimer);
+    consolePollTimer = null;
+  }
+}
+
+consoleToggleBtn.addEventListener('click', () => {
+  consoleDrawer.classList.contains('open') ? closeConsole() : openConsole();
+});
+consoleCloseBtn.addEventListener('click', closeConsole);
+consoleClearBtn.addEventListener('click', () => {
+  consoleBody.innerHTML = '';
+  consoleHasLines = false;
+  // Cursor is left as-is on purpose: Clear only wipes the display, it
+  // doesn't re-fetch history that's already been seen.
+});
+</script>
+
+</body>
+</html>
