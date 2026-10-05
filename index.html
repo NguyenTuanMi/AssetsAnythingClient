@@ -655,6 +655,14 @@
     <input id="server-url" type="text" value="http://localhost:8000" />
   </div>
 
+  <div>
+    <label class="field-label">3D reconstruction model</label>
+    <select id="backend-select" disabled>
+      <option>Loading models...</option>
+    </select>
+    <div id="backend-status" class="log" style="margin-top:6px;"></div>
+  </div>
+
   <div class="mode-toggle">
     <button id="mode-upload-btn" class="active">Upload images</button>
     <button id="mode-prompt-btn">Describe with prompt</button>
@@ -879,6 +887,64 @@ const toolbar = document.getElementById('viewer-toolbar');
 const toggleRotateBtn = document.getElementById('toggle-rotate');
 const resetCamBtn = document.getElementById('reset-cam');
 const algoSelect = document.getElementById('algo-select');
+const promptAlgoSelect = document.getElementById('prompt-algo-select');
+const backendSelect = document.getElementById('backend-select');
+const backendStatus = document.getElementById('backend-status');
+let backendCapabilities = {};
+
+function selectedBackend() {
+  return backendSelect.value;
+}
+
+function updateFusionControls() {
+  const capabilities = backendCapabilities[selectedBackend()] || {};
+  const supportsMulti = !!capabilities.supports_multi_image;
+  const modes = capabilities.multi_image_modes || [];
+  [algoSelect, promptAlgoSelect].forEach(select => {
+    Array.from(select.options).forEach(option => {
+      option.disabled = !supportsMulti && option.value !== 'stochastic';
+      option.hidden = !supportsMulti && option.value !== 'stochastic';
+      option.disabled = supportsMulti && modes.length > 0 && !modes.includes(option.value);
+      option.hidden = supportsMulti && modes.length > 0 && !modes.includes(option.value);
+    });
+    if (!supportsMulti || (modes.length > 0 && !modes.includes(select.value))) {
+      select.value = 'stochastic';
+    }
+  });
+}
+
+async function loadBackends() {
+  try {
+    const res = await fetch(`${serverUrl()}/backends`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const data = await res.json();
+    backendSelect.innerHTML = '';
+    backendCapabilities = {};
+    (data.backends || []).forEach(backend => {
+      backendCapabilities[backend.name] = backend.capabilities || {};
+      const option = document.createElement('option');
+      option.value = backend.name;
+      option.textContent = backend.display_name || backend.name;
+      backendSelect.appendChild(option);
+    });
+    if (data.default_backend && backendCapabilities[data.default_backend]) {
+      backendSelect.value = data.default_backend;
+    }
+    backendSelect.disabled = backendSelect.options.length === 0;
+    backendStatus.textContent = backendSelect.options.length
+      ? `${backendSelect.options.length} model(s) available`
+      : 'No reconstruction models available.';
+    updateFusionControls();
+  } catch (err) {
+    backendSelect.innerHTML = '<option value="">Unavailable</option>';
+    backendSelect.disabled = true;
+    backendStatus.textContent = 'Could not load reconstruction models.';
+    backendStatus.className = 'log error';
+  }
+}
+
+backendSelect.addEventListener('change', updateFusionControls);
+loadBackends();
 
 // ----- Upload-mode dimension controls -----
 const uploadAutoDimCheck = document.getElementById('upload-auto-dim-check');
@@ -1127,7 +1193,6 @@ const resolvedBox = document.getElementById('resolved-box');
 const resolvedObject = document.getElementById('resolved-object');
 const resolvedQuery = document.getElementById('resolved-query');
 const promptAlgoWrap = document.getElementById('prompt-algo-wrap');
-const promptAlgoSelect = document.getElementById('prompt-algo-select');
 const promptGenerateBtn = document.getElementById('prompt-generate-btn');
 const promptDimWrap = document.getElementById('prompt-dim-wrap');
 const promptAutoDimCheck = document.getElementById('prompt-auto-dim-check');
@@ -1281,6 +1346,7 @@ promptGenerateBtn.addEventListener('click', async () => {
 
     pendingScrapeId = data.scrape_id;
     pendingGenerateParams = {
+      backend: selectedBackend(),
       object_name: resolvedResult.object_name || '',
       multiimage_algo: promptAlgoSelect.value,
       auto_dimensions: promptAutoDimCheck.checked,
@@ -1300,7 +1366,7 @@ scrapeModalContinueBtn.addEventListener('click', async () => {
   if (!pendingScrapeId || !pendingGenerateParams || scrapeSelected.size === 0) return;
   hideScrapeModal();
 
-  setLog('Running TRELLIS on the remote server… this can take a minute');
+  setLog(`Running ${backendSelect.options[backendSelect.selectedIndex]?.text || 'model'} on the remote server… this can take a minute`);
   renderDimensions(null);
   setCurrentJob(null);
 
@@ -1432,7 +1498,10 @@ async function checkHealth() {
   }
 }
 checkHealth();
-serverUrlInput.addEventListener('change', checkHealth);
+serverUrlInput.addEventListener('change', () => {
+  checkHealth();
+  loadBackends();
+});
 
 runBtn.addEventListener('click', async () => {
   if (files.length === 0) return;
@@ -1445,6 +1514,7 @@ runBtn.addEventListener('click', async () => {
 
   const form = new FormData();
   files.forEach(f => form.append('images', f));
+  form.append('backend', selectedBackend());
   form.append('multiimage_algo', algoSelect.value);
   const target = getUploadTargetDimensions();
   if (target) {
